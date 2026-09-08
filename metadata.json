@@ -1,0 +1,6 @@
+{
+  "name": "オリジナル星座メーカー",
+  "description": "文化祭の展示用インタラクティブWebアプリ。夜空の星をドラッグ＆ドロップで繋ぎ、オリジナルの星座を作成・命名できます。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
