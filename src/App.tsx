@@ -864,21 +864,32 @@ export default function App() {
   const handleExportCanvasImage = () => {
     if (!isAdmin) return;
 
-    // 実際のWORLDサイズだと大きすぎるため、縮小してエクスポート (例: 4000x3000)
+    // 高解像度での出力 (2x スケールでよりシャープに)
     const EXPORT_WIDTH = 4000;
     const EXPORT_HEIGHT = (WORLD_HEIGHT / WORLD_WIDTH) * EXPORT_WIDTH;
     const EXPORT_SCALE = EXPORT_WIDTH / WORLD_WIDTH;
 
+    // 画面外のキャンバスを作成
     const offCanvas = document.createElement('canvas');
+    // デバイスピクセル比の考慮は不要なため、そのまま設定
     offCanvas.width = EXPORT_WIDTH;
     offCanvas.height = EXPORT_HEIGHT;
-    const ctx = offCanvas.getContext('2d');
+    const ctx = offCanvas.getContext('2d', { alpha: false }); // 背景を不透明に設定
     if (!ctx) return;
 
-    // スケールを適用
+    // 高画質描画設定
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+
+    // 背景を確実に黒く塗りつぶす (透過によるバグを防ぐため)
+    ctx.fillStyle = '#02040a';
+    ctx.fillRect(0, 0, EXPORT_WIDTH, EXPORT_HEIGHT);
+
+    // スケールを適用 (描画関数内で座標系をWORLD系に変換)
+    ctx.save();
     ctx.scale(EXPORT_SCALE, EXPORT_SCALE);
 
-    // 1. 背景描画
+    // 1. 背景描画 (WORLD_WIDTH/HEIGHTをベースに描画)
     drawCosmicBackground(ctx, WORLD_WIDTH, WORLD_HEIGHT, performance.now() * 0.001);
 
     // 2. 星の描画
@@ -898,15 +909,19 @@ export default function App() {
       drawConstellationLabel(ctx, c, 0, 1.0);
     });
 
+    ctx.restore();
+
     // 4. ダウンロード処理
     try {
-      const dataUrl = offCanvas.toDataURL('image/jpeg', 0.9);
+      // pngに変更して画質劣化(圧縮ノイズ)を防ぐ
+      const dataUrl = offCanvas.toDataURL('image/png');
       const link = document.createElement('a');
-      link.download = `stellar_canvas_export_${Date.now()}.jpg`;
+      link.download = `stellar_canvas_export_${Date.now()}.png`;
       link.href = dataUrl;
       link.click();
     } catch (e) {
       console.error('Export failed:', e);
+      alert('画像のエクスポートに失敗しました。');
     }
   };
 
