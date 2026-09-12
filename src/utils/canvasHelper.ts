@@ -565,7 +565,7 @@ export function drawConstellationLabel(
   timeSec: number,
   scale: number = 1.0
 ) {
-  const { name, centerX, centerY, themeColor } = constellation;
+  const { name, description, centerX, centerY, themeColor } = constellation;
   if (!name) return;
 
   ctx.save();
@@ -585,7 +585,28 @@ export function drawConstellationLabel(
   const rectWidth = textWidth + paddingX * 2;
   const rectHeight = (fontSize + 14);
 
-  // ラベル背面のすりガラス調ピルバッジ
+  // --- エピソード表示用の計算 (ズーム倍率が一定以上でフェードイン) ---
+  const SHOW_DESC_THRESHOLD = 1.3;
+  const FULL_DESC_THRESHOLD = 1.7;
+  let descOpacity = 0;
+  
+  if (description && scale > SHOW_DESC_THRESHOLD) {
+    descOpacity = Math.min(1, (scale - SHOW_DESC_THRESHOLD) / (FULL_DESC_THRESHOLD - SHOW_DESC_THRESHOLD));
+  }
+  
+  const hasDescription = descOpacity > 0;
+  const descFontSize = Math.max(10, Math.min(15, Math.round(14 / Math.pow(scale, 0.25))));
+  
+  let descRectHeight = 0;
+  let descWidth = 0;
+  
+  if (hasDescription && description) {
+    ctx.font = `400 ${descFontSize}px "Shippori Mincho", "Zen Kaku Gothic New", serif`;
+    descWidth = ctx.measureText(description).width + paddingX * 2.5;
+    descRectHeight = (descFontSize + 12);
+  }
+
+  // ラベル背面のすりガラス調ピルバッジ (名前用)
   ctx.save();
   ctx.fillStyle = 'rgba(2, 4, 10, 0.82)';
   ctx.strokeStyle = themeColor;
@@ -602,7 +623,37 @@ export function drawConstellationLabel(
   ctx.stroke();
   ctx.restore();
 
-  // 文字自体のネオングロー描画
+  // エピソード用バッジ
+  if (hasDescription && description) {
+    ctx.save();
+    ctx.globalAlpha = descOpacity;
+    ctx.fillStyle = 'rgba(2, 4, 10, 0.75)';
+    ctx.strokeStyle = `rgba(148, 163, 184, ${descOpacity * 0.4})`; // border-slate-400
+    ctx.lineWidth = 1 / scale;
+    ctx.shadowColor = themeColor;
+    ctx.shadowBlur = 8 / scale;
+    
+    const dRx = centerX - descWidth / 2;
+    const dRy = ry + rectHeight + (6 / scale); // 名前バッジの下に配置
+    
+    ctx.beginPath();
+    ctx.roundRect(dRx, dRy, descWidth, descRectHeight, 10 / scale);
+    ctx.fill();
+    ctx.stroke();
+    
+    // エピソードの文字描画
+    ctx.font = `400 ${descFontSize}px "Shippori Mincho", "Zen Kaku Gothic New", serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = `rgba(226, 232, 240, ${descOpacity})`; // text-slate-200
+    ctx.fillText(description, centerX, dRy + descRectHeight / 2);
+    ctx.restore();
+  }
+
+  // 文字自体のネオングロー描画 (名前用)
+  ctx.font = `700 ${fontSize}px "Shippori Mincho", "Zen Kaku Gothic New", serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
   ctx.shadowColor = themeColor;
   ctx.shadowBlur = 12 / scale;
   ctx.fillStyle = '#ffffff';

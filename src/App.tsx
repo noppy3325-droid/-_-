@@ -27,6 +27,7 @@ import { HeaderBanner } from './components/HeaderBanner';
 import { CompletionModal } from './components/CompletionModal';
 import { ConstellationListDrawer } from './components/ConstellationListDrawer';
 import { GuideModal } from './components/GuideModal';
+import { ExportImageModal } from './components/ExportImageModal';
 
 const STORAGE_KEY = 'original_constellations_v2';
 
@@ -35,7 +36,14 @@ export default function App() {
 
   // 星空と星座のデータ構造
   const [stars, setStars] = useState<Star[]>([]);
-  const [pendingLines, setPendingLines] = useState<Line[]>([]);
+  const [pendingLines, setPendingLines] = useState<Line[]>(() => {
+    try {
+      const saved = localStorage.getItem('pending_lines_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [constellations, setConstellations] = useState<Constellation[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
@@ -65,7 +73,8 @@ export default function App() {
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [activeHighlightConstellationId, setActiveHighlightConstellationId] = useState<string | null>(null);
   const [toolMode, setToolMode] = useState<'draw' | 'pan'>('draw');
-  
+  const [exportImageUrl, setExportImageUrl] = useState<string | null>(null);
+
   // 管理者モード（URLパラメータ or タイトル5回タップで有効化）
   const [isAdmin, setIsAdmin] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -159,6 +168,15 @@ export default function App() {
     }
   }, [constellations]);
 
+  // 作業中の線をlocalStorageに保存
+  useEffect(() => {
+    try {
+      localStorage.setItem('pending_lines_v1', JSON.stringify(pendingLines));
+    } catch {
+      // Ignore quota errors
+    }
+  }, [pendingLines]);
+
   // キーボードの矢印キーによるパン（移動）操作
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -195,6 +213,58 @@ export default function App() {
     
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // 文化祭・展示用の無操作オートリセット機能（3分間放置で初期状態、30秒で移動モード）
+  useEffect(() => {
+    let idleTimeout: NodeJS.Timeout;
+    let modeResetTimeout: NodeJS.Timeout;
+
+    const resetIdleTimer = () => {
+      clearTimeout(idleTimeout);
+      clearTimeout(modeResetTimeout);
+
+      // 30秒間無操作で安全な「移動（pan）」モードに自動切替
+      modeResetTimeout = setTimeout(() => {
+        setToolMode('pan');
+      }, 30000);
+
+      idleTimeout = setTimeout(() => {
+        // 作成中の線をクリア
+        setPendingLines([]);
+        
+        // 視点を初期状態にリセット
+        const initialScale = 0.85;
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        const newViewport = {
+          scale: initialScale,
+          panX: (w - WORLD_WIDTH * initialScale) / 2,
+          panY: (h - WORLD_HEIGHT * initialScale) / 2,
+        };
+        setViewport(newViewport);
+        viewportRef.current = newViewport;
+        
+        // 全てのモーダルを閉じる
+        setIsCompletionModalOpen(false);
+        setIsRegistryOpen(false);
+        setIsGuideOpen(false);
+      }, 180000); // 3分 (180,000ms)
+    };
+
+    window.addEventListener('pointerdown', resetIdleTimer);
+    window.addEventListener('keydown', resetIdleTimer);
+    window.addEventListener('wheel', resetIdleTimer);
+    
+    resetIdleTimer(); // 初回セット
+
+    return () => {
+      clearTimeout(idleTimeout);
+      clearTimeout(modeResetTimeout);
+      window.removeEventListener('pointerdown', resetIdleTimer);
+      window.removeEventListener('keydown', resetIdleTimer);
+      window.removeEventListener('wheel', resetIdleTimer);
+    };
   }, []);
 
   // Audio mute/unmute sync
@@ -675,6 +745,12 @@ export default function App() {
         );
 
         if (!exists) {
+          // パフォーマンス低下・悪戯防止のため、1つの星座の線は100本までに制限
+          if (pendingLinesRef.current.length >= 100) {
+            soundEffects.playClear(); // エラー音の代わりにクリア音を鳴らして失敗を通知
+            return;
+          }
+
           const newLine: Line = {
             id: `line_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
             fromStarId: startStar.id,
@@ -915,10 +991,7 @@ export default function App() {
     try {
       // pngに変更して画質劣化(圧縮ノイズ)を防ぐ
       const dataUrl = offCanvas.toDataURL('image/png');
-      const link = document.createElement('a');
-      link.download = `stellar_canvas_export_${Date.now()}.png`;
-      link.href = dataUrl;
-      link.click();
+      setExportImageUrl(dataUrl); // モーダルを表示して保存を促す
     } catch (e) {
       console.error('Export failed:', e);
       alert('画像のエクスポートに失敗しました。');
@@ -949,7 +1022,7 @@ export default function App() {
   }, [pendingLines]);
 
   return (
-    <div className="relative w-screen h-screen overflow-hidden select-none bg-[#02040a] text-slate-200">
+    <div className="relative w-screen h-[100dvh] overflow-hidden select-none bg-[#02040a] text-slate-200">
       {/* メインCanvas */}
       <canvas
         ref={canvasRef}
@@ -959,6 +1032,7 @@ export default function App() {
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
+        onContextMenu={(e) => e.preventDefault()}
       />
 
       {/* ヘッダーバナー */}
@@ -1012,6 +1086,13 @@ export default function App() {
       <GuideModal
         isOpen={isGuideOpen}
         onClose={() => setIsGuideOpen(false)}
+      />
+
+      {/* エクスポート画像表示モーダル */}
+      <ExportImageModal
+        isOpen={exportImageUrl !== null}
+        onClose={() => setExportImageUrl(null)}
+        imageUrl={exportImageUrl}
       />
     </div>
   );
